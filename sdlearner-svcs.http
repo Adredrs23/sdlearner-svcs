@@ -1,0 +1,6 @@
+@sdlearner_svcs_HostAddress = http://localhost:5038
+
+GET {{sdlearner_svcs_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
