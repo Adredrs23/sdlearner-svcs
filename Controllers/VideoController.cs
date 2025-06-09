@@ -1,8 +1,11 @@
 using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using RabbitMQ.Client;
 using SDLearnerSVCs.Data;
 using SDLearnerSVCs.Models;
 using SDLearnerSVCs.VideoDTO;
@@ -76,7 +79,6 @@ namespace SDLearnerSVCs.Controllers
         {
 
             var video = await _dbContext.Videos.FindAsync(request.VideoId);
-            // var video = await _dbContext.Videos.FirstOrDefaultAsync(v => v.Id == request.VideoId);
             if (video == null)
             {
                 return NotFound("Video not found");
@@ -84,6 +86,33 @@ namespace SDLearnerSVCs.Controllers
 
             video.Status = "uploaded";
             await _dbContext.SaveChangesAsync();
+
+            var factory = new ConnectionFactory() { HostName = "localhost" };
+
+            using var connection = await factory.CreateConnectionAsync();
+            using var channel = await connection.CreateChannelAsync();
+
+            // Declare the queue (idempotent)
+            await channel.QueueDeclareAsync(queue: "video-processing",
+                                 durable: true,
+                                 exclusive: false,
+                                 autoDelete: false,
+                                 arguments: null);
+
+            // Send a message (JSON encoded)
+            var message = JsonSerializer.Serialize(new { videoId = video.Id });
+            var body = Encoding.UTF8.GetBytes(message);
+            var properties = new BasicProperties
+            {
+                Persistent = true, // Makes message durable
+                ContentType = "application/json"
+            };
+
+            await channel.BasicPublishAsync(exchange: "",
+                                 routingKey: "video-processing",
+                                 mandatory: true,
+                                 basicProperties: properties,
+                                 body: body);
 
             return Ok(new { message = "Upload confirmed" });
         }
