@@ -18,28 +18,24 @@ namespace SDLearnerSVCs.Controllers
     [ApiController]
     public class VideoController : ControllerBase
     {
+        private readonly IConfiguration _configuration;
 
         private readonly IAmazonS3 _s3Client;
         private readonly AppDbContext _dbContext;
 
-        public VideoController(AppDbContext appDbContext)
+        public VideoController(AppDbContext appDbContext, IConfiguration configuration)
         {
+            _configuration = configuration;
 
-            this._dbContext = appDbContext;
+            _dbContext = appDbContext;
 
-            _s3Client = new AmazonS3Client("minioadmin", "minioadmin",
+            _s3Client = new AmazonS3Client(configuration["Minio:AccessKey"], configuration["Minio:SecretKey"],
                 new AmazonS3Config
                 {
-                    ServiceURL = "http://localhost:9000",
+                    ServiceURL = configuration["Minio:Endpoint"] ?? "http://localhost:9000",
                     ForcePathStyle = true,
                     UseHttp = true
                 });
-        }
-
-        [HttpGet]
-        public IActionResult getString()
-        {
-            return Ok("Jello World");
         }
 
         [HttpPost("initiate-upload")]
@@ -87,17 +83,24 @@ namespace SDLearnerSVCs.Controllers
             video.Status = "uploaded";
             await _dbContext.SaveChangesAsync();
 
-            var factory = new ConnectionFactory() { HostName = "localhost" };
+            // var factory = new ConnectionFactory() { HostName = "localhost" };
+            var factory = new ConnectionFactory()
+            {
+                HostName = _configuration["RabbitMQ:HostName"] ?? "localhost",
+                UserName = _configuration["RabbitMQ:UserName"] ?? "Guest",
+                Password = _configuration["RabbitMQ:Password"] ?? "Guest",
+                Port = int.Parse(_configuration["RabbitMQ:Port"] ?? "5672")
+            };
 
             using var connection = await factory.CreateConnectionAsync();
             using var channel = await connection.CreateChannelAsync();
 
             // Declare the queue (idempotent)
             await channel.QueueDeclareAsync(queue: "video-processing",
-                                 durable: true,
-                                 exclusive: false,
-                                 autoDelete: false,
-                                 arguments: null);
+                                durable: true,
+                                exclusive: false,
+                                autoDelete: false,
+                                arguments: null);
 
             // Send a message (JSON encoded)
             var message = JsonSerializer.Serialize(new { videoId = video.Id });
@@ -109,10 +112,10 @@ namespace SDLearnerSVCs.Controllers
             };
 
             await channel.BasicPublishAsync(exchange: "",
-                                 routingKey: "video-processing",
-                                 mandatory: true,
-                                 basicProperties: properties,
-                                 body: body);
+                                routingKey: "video-processing",
+                                mandatory: true,
+                                basicProperties: properties,
+                                body: body);
 
             return Ok(new { message = "Upload confirmed" });
         }

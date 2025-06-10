@@ -4,8 +4,14 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SDLearnerSVCs.Data;
 
+DotNetEnv.Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Configuration
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
+    .AddEnvironmentVariables();
 
 builder.Services.AddCors(options =>
 {
@@ -13,7 +19,7 @@ builder.Services.AddCors(options =>
     {
         policy
             // .AllowAnyOrigin()
-            .WithOrigins("http://localhost:3000")       // or .WithOrigins("http://localhost:4200") for specific origin
+            .WithOrigins(builder.Configuration["Frontend:URL"] ?? "http://localhost:3000")       // or .WithOrigins("http://localhost:4200") for specific origin
             .AllowAnyMethod()
             .AllowAnyHeader()
         .AllowCredentials();
@@ -32,8 +38,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = "http://localhost:8080/realms/dotnetlearner";
-        options.Audience = "dotnet-api"; // Your client_id
+        options.Authority = builder.Configuration["Keycloak:Authority"];
+        options.Audience = builder.Configuration["Keycloak:ClientId"]; // Your client_id
         options.RequireHttpsMetadata = false; // Only for dev
 
         options.TokenValidationParameters = new TokenValidationParameters
@@ -41,8 +47,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateLifetime = true,
-            ValidIssuer = "http://localhost:8080/realms/dotnetlearner",
-            ValidAudience = "dotnet-api",
+            ValidIssuer = builder.Configuration["Keycloak:Authority"],
+            ValidAudience = builder.Configuration["Keycloak:ClientId"],
             // ValidAudience = "account"
             NameClaimType = "name",
 
@@ -80,8 +86,8 @@ builder.Services.AddSwaggerGen(c =>
         {
             AuthorizationCode = new OpenApiOAuthFlow
             {
-                AuthorizationUrl = new Uri("http://localhost:8080/realms/dotnetlearner/protocol/openid-connect/auth"),
-                TokenUrl = new Uri("http://localhost:8080/realms/dotnetlearner/protocol/openid-connect/token"),
+                AuthorizationUrl = new Uri($"{builder.Configuration["Keycloak:Authority"]}/protocol/openid-connect/auth"),
+                TokenUrl = new Uri($"{builder.Configuration["Keycloak:Authority"]}/protocol/openid-connect/token"),
                 Scopes = new Dictionary<string, string>
                 {
                     { "openid", "OpenID Connect scope" },
@@ -126,7 +132,7 @@ app.UseSwaggerUI(c =>
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Your API V1");
 
     // 🧠 Add this to enable OAuth2 login via Swagger UI
-    c.OAuthClientId("dotnet-api"); // Your Keycloak Client ID
+    c.OAuthClientId(builder.Configuration["Keycloak:ClientId"]); // Your Keycloak Client ID
     // c.OAuthUsePkce(); // Required if client is public
 });
 app.UseHttpsRedirection();
