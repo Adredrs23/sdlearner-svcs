@@ -135,8 +135,10 @@ namespace SDLearnerSVCs.Controllers
             var response = new
             {
                 thumbnailUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/thumb.jpg"),
-                video480pUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/video_480p.mp4"),
+                video1080pUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/video_1080p.mp4"),
                 video720pUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/video_720p.mp4"),
+                video480pUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/video_480p.mp4"),
+                video144pUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/video_144p.mp4"),
             };
 
             return Ok(response);
