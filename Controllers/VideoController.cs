@@ -5,6 +5,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 using SDLearnerSVCs.Data;
 using SDLearnerSVCs.Models;
@@ -118,6 +119,74 @@ namespace SDLearnerSVCs.Controllers
                                 body: body);
 
             return Ok(new { message = "Upload confirmed" });
+        }
+
+        [HttpGet("{id}/play")]
+        public async Task<IActionResult> GetPresignedUrls(Guid id)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            var video = await _dbContext.Videos.FindAsync(id);
+            if (video == null || video.UserId != userId)
+                return Unauthorized();
+
+            var baseKey = $"{video.UserId}/{video.Id}";
+
+            var response = new
+            {
+                thumbnailUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/thumb.jpg"),
+                video480pUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/video_480p.mp4"),
+                video720pUrl = GeneratePresignedUrl("processed-videos", $"{baseKey}/video_720p.mp4"),
+            };
+
+            return Ok(response);
+        }
+
+
+        [HttpGet("user")]
+        public async Task<IActionResult> GetUserVideos()
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized("User ID not found in token.");
+            }
+
+            var videos = await _dbContext.Videos
+                .Where(v => v.UserId == userId)
+                .Select(v => new
+                {
+                    v.Id,
+                    v.FileName,
+                    v.ThumbnailUrl,
+                    v.Status
+                })
+                .ToListAsync();
+
+            return Ok(videos);
+        }
+
+        [HttpGet("preview-url")]
+        public async Task<IActionResult> GetPreviewUrl([FromQuery] string key)
+        {
+
+            var url = GeneratePresignedUrl(key.Split('/')[0], string.Join('/', key.Split('/').Skip(1)));
+            Console.WriteLine("url", url);
+            return Ok(new { url });
+        }
+
+        private string GeneratePresignedUrl(string bucket, string key)
+        {
+            var request = new GetPreSignedUrlRequest
+            {
+                BucketName = bucket,
+                Key = key,
+                Expires = DateTime.UtcNow.AddMinutes(15),
+                Protocol = Protocol.HTTP
+            };
+
+            return _s3Client.GetPreSignedURL(request);
         }
     }
 }
